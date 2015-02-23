@@ -203,7 +203,10 @@ def short_hex(bytes):
     return t[0:4]+"..."+t[-4:]
 
 
-
+# Note that
+# OP_1 = OP_NAME_NEW
+# OP_2 = OP_NAME_FIRSTUPDATE
+# OP_3 = OP_NAME_UPDATE
 opcodes = Enumeration("Opcodes", [
     ("OP_0", 0), ("OP_PUSHDATA1",76), "OP_PUSHDATA2", "OP_PUSHDATA4", "OP_1NEGATE", "OP_RESERVED",
     "OP_1", "OP_2", "OP_3", "OP_4", "OP_5", "OP_6", "OP_7",
@@ -421,6 +424,24 @@ def get_address_from_output_script(bytes):
 
     return 'script', bytes
 
+    # name_firstupdate
+    match = [ opcodes.OP_2, opcodes.OP_PUSHDATA4, opcodes.OP_PUSHDATA4, opcodes.OP_PUSHDATA4, opcodes.OP_2DROP, opcodes.OP_2DROP, opcodes.OP_DUP, opcodes.OP_HASH160, opcodes.OP_PUSHDATA4, opcodes.OP_EQUALVERIFY, opcodes.OP_CHECKSIG ]
+    if match_decoded(decoded, match):
+        return 'name_firstupdate', {
+            'address': hash_160_to_bc_address(decoded[8][1]),
+            'name': decoded[1][1],
+            'rand': decoded[2][1],
+            'value': deocded[3][1]
+        }
+
+    # name_update
+    match = [ opcodes.OP_3, opcodes.OP_PUSHDATA4, opcodes.OP_PUSHDATA4, opcodes.OP_2DROP, opcodes.OP_DROP, opcodes.OP_DUP, opcodes.OP_HASH160, opcodes.OP_PUSHDATA4, opcodes.OP_EQUALVERIFY, opcodes.OP_CHECKSIG ]
+    if match_decoded(decoded, match):
+        return 'name_update', {
+            'address': hash_160_to_bc_address(decoded[7][1]),
+            'name': decoded[1][1],
+            'value': decoded[2][1]
+        }
 
 
 
@@ -573,6 +594,28 @@ class Transaction:
                 script += '87'                                       # op_equal
             else:
                 raise
+        elif output_type == 'name_firstupdate':
+            addrtype, hash160 = bc_address_to_hash_160(addr['address'])
+            name_identifier = addr['name']
+            name_rand = addr['rand']
+            name_value = addr['value']
+            script = '52'                       # op_name_firstupdate
+            script += push_script(name_identifier)
+            script += push_script(name_rand)
+            script += push_script(name_value)
+            script += '6d6d76a9'                # op_2drop, op_2drop, op_dup, op_hash_160
+            script += push_script(hash160.encode('hex'))
+            script += '88ac'                    # op_equalverify, op_checksig
+        elif output_type == 'name_update':
+            addrtype, hash160 = bc_address_to_hash_160(addr['address'])
+            name_identifier = addr['name']
+            name_value = addr['value']
+            script = '53'                       # op_name_update
+            script += push_script(name_identifier)
+            script += push_script(name_value)
+            script += '6d7576a9'                # op_2drop, op_drop, op_dup, op_hash_160
+            script += push_script(hash160.encode('hex'))
+            script += '88ac'                    # op_equalverify, op_checksig
         else:
             raise
         return script
@@ -751,6 +794,10 @@ class Transaction:
                 addr = x
             elif type == 'pubkey':
                 addr = public_key_to_bc_address(x.decode('hex'))
+            elif type == 'name_firstupdate':
+                addr = x['address']
+            elif type == 'name_update':
+                addr = x['address']
             else:
                 addr = 'SCRIPT ' + x.encode('hex')
             o.append((addr,v))      # consider using yield (addr, v)
@@ -762,6 +809,17 @@ class Transaction:
 
     def has_address(self, addr):
         return (addr in self.get_output_addresses()) or (addr in (tx.get("address") for tx in self.inputs))
+
+    def get_name_operations(self):
+        """retrieve name operations e.g. name_update"""
+        o = []
+        for type, x, v in self.outputs:
+            if type == 'name_firstupdate' or type == 'name_update':
+                nameop = x
+            else:
+                continue
+            o.append((type, nameop))
+        return o
 
 
     def get_value(self, addresses, prevout_values):
