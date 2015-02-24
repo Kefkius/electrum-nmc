@@ -173,6 +173,8 @@ class Abstract_Wallet(object):
 
         self.load_transactions()
 
+        self.load_names()
+
         # not saved
         self.prevout_values = {}     # my own transaction outputs
         self.spent_outputs = []
@@ -192,6 +194,17 @@ class Abstract_Wallet(object):
         if self.storage.get('wallet_type') is None:
             self.storage.put('wallet_type', self.wallet_type, True)
 
+    def save_names(self):
+        names = {}
+        for k, v in self.names.items():
+            names[k] = str(v)
+        self.storage.put('names', names, True)
+
+    def load_names(self):
+        self.names = {}
+        name_list = self.storage.get('names', {})
+        for k, v in name_list.items():
+            self.names[k] = v
 
     def load_transactions(self):
         self.transactions = {}
@@ -552,6 +565,36 @@ class Abstract_Wallet(object):
         for tx_hash, height in h:
             status += tx_hash + ':%d:' % height
         return hashlib.sha256( status ).digest().encode('hex')
+
+    def get_blocks_until_name_expires(self, identifier):
+        name, namelist = self.names.get(identifier, None)
+        if name is None: return
+        # names last 35,999 blocks
+        name_expiration_period = 35999
+        registered_height = namelist[3]
+        expiration_block = registered_height + name_expiration_period
+        return expiration_block - (self.network.get_local_height() - registered_height)
+
+    def tx_name_check(self, tx_hash, tx, tx_height):
+        """Check for name updates in a tx"""
+        name_operations = tx.get_name_operations()
+        # iterate through outputs that have name operations
+        for i, (op_type, op) in name_operations:
+            addr = op['address']
+            # nevermind if it's not my address
+            if self.history.get(address) is None:
+                continue
+            if op_type == 'name_firstupdate' or op_type == 'name_update':
+                name_identifier = op['name']
+                name_value = op['value']
+                # add the name to wallet's names
+                self.names[name_identifier] = [
+                    name_value,
+                    tx_hash,
+                    addr,
+                    tx_height
+                ]
+        self.save_names()
 
     def receive_tx_callback(self, tx_hash, tx, tx_height):
 

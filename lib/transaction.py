@@ -429,9 +429,9 @@ def get_address_from_output_script(bytes):
     if match_decoded(decoded, match):
         return 'name_firstupdate', {
             'address': hash_160_to_bc_address(decoded[8][1]),
-            'name': decoded[1][1],
+            'name': decoded[1][1].decode('hex'),
             'rand': decoded[2][1],
-            'value': deocded[3][1]
+            'value': decoded[3][1].decode('hex')
         }
 
     # name_update
@@ -439,8 +439,8 @@ def get_address_from_output_script(bytes):
     if match_decoded(decoded, match):
         return 'name_update', {
             'address': hash_160_to_bc_address(decoded[7][1]),
-            'name': decoded[1][1],
-            'value': decoded[2][1]
+            'name': decoded[1][1].decode('hex'),
+            'value': decoded[2][1].decode('hex')
         }
 
 
@@ -600,9 +600,9 @@ class Transaction:
             name_rand = addr['rand']
             name_value = addr['value']
             script = '52'                       # op_name_firstupdate
-            script += push_script(name_identifier)
+            script += push_script(name_identifier.encode('hex'))
             script += push_script(name_rand)
-            script += push_script(name_value)
+            script += push_script(name_value.encode('hex'))
             script += '6d6d76a9'                # op_2drop, op_2drop, op_dup, op_hash_160
             script += push_script(hash160.encode('hex'))
             script += '88ac'                    # op_equalverify, op_checksig
@@ -611,8 +611,8 @@ class Transaction:
             name_identifier = addr['name']
             name_value = addr['value']
             script = '53'                       # op_name_update
-            script += push_script(name_identifier)
-            script += push_script(name_value)
+            script += push_script(name_identifier.encode('hex'))
+            script += push_script(name_value.encode('hex'))
             script += '6d7576a9'                # op_2drop, op_drop, op_dup, op_hash_160
             script += push_script(hash160.encode('hex'))
             script += '88ac'                    # op_equalverify, op_checksig
