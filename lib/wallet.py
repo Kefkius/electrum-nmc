@@ -199,12 +199,22 @@ class Abstract_Wallet(object):
         for k, v in self.names.items():
             names[k] = str(v)
         self.storage.put('names', names, True)
+        # pending names (after name_new but before name_firstupdate)
+        pending_names = {}
+        for pk, pv in self.pending_names.items():
+            pending_names[pk] = str(pv)
+        self.storage.put('pending_names', pending_names, True)
 
     def load_names(self):
         self.names = {}
         name_list = self.storage.get('names', {})
         for k, v in name_list.items():
             self.names[k] = v
+        # pending names (after name_new but before name_firstupdate)
+        self.pending_names = {}
+        pending_list = self.storage.get('pending_names', {})
+        for pk, pv in pending_list.items():
+            self.pending_names[pk] = pv
 
     def load_transactions(self):
         self.transactions = {}
@@ -578,6 +588,7 @@ class Abstract_Wallet(object):
     def tx_name_check(self, tx_hash, tx, tx_height):
         """Check for name updates in a tx"""
         name_operations = tx.get_name_operations()
+        name_changed = False
         # iterate through outputs that have name operations
         for i, (op_type, op) in name_operations:
             addr = op['address']
@@ -594,7 +605,9 @@ class Abstract_Wallet(object):
                     addr,
                     tx_height
                 ]
-        self.save_names()
+                name_changed = True
+        if name_changed == True:
+            self.save_names()
 
     def receive_tx_callback(self, tx_hash, tx, tx_height):
 

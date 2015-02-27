@@ -424,6 +424,14 @@ def get_address_from_output_script(bytes):
 
     return 'script', bytes
 
+    # name_new
+    match = [ opcodes.OP_1, opcodes.OP_PUSHDATA4, opcodes.OP_2DROP, opcodes.OP_DUP, opcodes.OP_HASH160, opcodes.OP_PUSHDATA4, opcodes.OP_EQUALVERIFY, opcodes.OP_CHECKSIG ]
+    if match_decoded(decoded, match):
+        return 'name_new', {
+            'address': hash_160_to_bc_address(decoded[5][1]),
+            'rand_hash': decoded[1][1]
+        }
+
     # name_firstupdate
     match = [ opcodes.OP_2, opcodes.OP_PUSHDATA4, opcodes.OP_PUSHDATA4, opcodes.OP_PUSHDATA4, opcodes.OP_2DROP, opcodes.OP_2DROP, opcodes.OP_DUP, opcodes.OP_HASH160, opcodes.OP_PUSHDATA4, opcodes.OP_EQUALVERIFY, opcodes.OP_CHECKSIG ]
     if match_decoded(decoded, match):
@@ -594,6 +602,14 @@ class Transaction:
                 script += '87'                                       # op_equal
             else:
                 raise
+        elif output_type == 'name_new':
+            addrtype, hash160 = bc_address_to_hash_160(addr['address'])
+            rand_hash = addr['rand_hash']
+            script = '51'                       # op_name_new
+            script += push_script(rand_hash)
+            script += '6d76a9'                  # op_2drop, op_dup, op_hash160
+            script += push_script(hash160.encode('hex'))
+            script += '88ac'                    # op_equalverify, op_checksig
         elif output_type == 'name_firstupdate':
             addrtype, hash160 = bc_address_to_hash_160(addr['address'])
             name_identifier = addr['name']
@@ -794,6 +810,8 @@ class Transaction:
                 addr = x
             elif type == 'pubkey':
                 addr = public_key_to_bc_address(x.decode('hex'))
+            elif type == 'name_new':
+                addr = x['address']
             elif type == 'name_firstupdate':
                 addr = x['address']
             elif type == 'name_update':
@@ -814,7 +832,7 @@ class Transaction:
         """retrieve name operations e.g. name_update"""
         o = []
         for type, x, v in self.outputs:
-            if type == 'name_firstupdate' or type == 'name_update':
+            if type == 'name_new' or type == 'name_firstupdate' or type == 'name_update':
                 nameop = x
             else:
                 continue
