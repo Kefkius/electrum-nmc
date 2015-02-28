@@ -590,21 +590,41 @@ class Abstract_Wallet(object):
         name_operations = tx.get_name_operations()
         name_changed = False
         # iterate through outputs that have name operations
-        for i, (op_type, op) in name_operations:
+        for i, op_type, op in name_operations:
             addr = op['address']
             # nevermind if it's not my address
             if self.history.get(address) is None:
                 continue
-            if op_type == 'name_firstupdate' or op_type == 'name_update':
+            if op_type == 'name_new':
+                # find pending name with matching rand hash
+                name_identifier = ''
+                rand_hash = op['rand_hash']
+                for k, v in self.pending_names.items():
+                    if v.get('rand_hash') == rand_hash:
+                        name_identifier = k
+                # update pending name's tx fields
+                if not self.pending_names.get(name_identifier, None):
+                    continue
+                self.pending_names[name_identifier].update({
+                    'txid': tx_hash,
+                    'vout': i,
+                    'height': tx_height
+                })
+                name_changed = True
+            elif op_type == 'name_firstupdate' or op_type == 'name_update':
                 name_identifier = op['name']
                 name_value = op['value']
                 # add the name to wallet's names
                 self.names[name_identifier] = [
                     name_value,
                     tx_hash,
+                    i,
                     addr,
                     tx_height
                 ]
+                # remove pending name if firstupdate
+                if op_type == 'name_firstupdate':
+                    self.pending_names.pop(name_identifier)
                 name_changed = True
         if name_changed == True:
             self.save_names()
@@ -737,6 +757,49 @@ class Abstract_Wallet(object):
         if fee < MIN_RELAY_TX_FEE: # and tx.requires_fee(self.verifier):
             fee = MIN_RELAY_TX_FEE
         return fee
+
+    def make_name_new_tx(self, identifier):
+        from decimal import Decimal
+        out_amount = Decimal('0.01')
+        p = pow(10, 8)
+        out_amount = int(out_amount * p)
+
+        # get a new address
+        domain = self.addresses(True)
+        for addr in domain:
+            if not self.history.get(addr):
+                name_address = addr
+                break
+
+        def str_to_hex(s):
+            hlist = []
+            for ch in s:
+                h = hex(ord(ch)).replace('0x', '')
+                if len(v) == 1:
+                    v = '0' + v
+                hlist.append(v)
+            return reduce(lambda x,y:x+y, hlist)
+
+        # concat 20 random bytes with identifier
+        rand_bytes = os.urandom(20).encode('hex')
+        name_string = (rand_bytes + str_to_hex(identifier)).decode('hex')
+        rand_hash = hash_160(name_string).encode('hex')
+
+        name_output = {
+            'address': name_address,
+            'rand_hash': rand_hash
+        }
+
+        outputs = [ ('name_new', name_output, out_amount) ]
+
+        tx = self.make_unsigned_transaction(outputs)
+        # add rand bytes to pending_names
+        self.pending_names[identifier] = {
+            'rand': rand_bytes,
+            'rand_hash': rand_hash
+        }
+        self.save_names()
+        return tx
 
     def make_unsigned_transaction(self, outputs, fixed_fee=None, change_addr=None, domain=None, coins=None ):
         # check outputs

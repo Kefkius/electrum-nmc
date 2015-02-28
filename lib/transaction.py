@@ -810,12 +810,12 @@ class Transaction:
                 addr = x
             elif type == 'pubkey':
                 addr = public_key_to_bc_address(x.decode('hex'))
-            elif type == 'name_new':
-                addr = x['address']
-            elif type == 'name_firstupdate':
-                addr = x['address']
-            elif type == 'name_update':
-                addr = x['address']
+#            elif type == 'name_new':
+#                addr = x['address']
+#            elif type == 'name_firstupdate':
+#                addr = x['address']
+#            elif type == 'name_update':
+#                addr = x['address']
             else:
                 addr = 'SCRIPT ' + x.encode('hex')
             o.append((addr,v))      # consider using yield (addr, v)
@@ -831,12 +831,12 @@ class Transaction:
     def get_name_operations(self):
         """retrieve name operations e.g. name_update"""
         o = []
-        for type, x, v in self.outputs:
+        for i, (type, x, v) in enumerate(self.outputs):
             if type == 'name_new' or type == 'name_firstupdate' or type == 'name_update':
                 nameop = x
             else:
                 continue
-            o.append((type, nameop))
+            o.append((i, type, nameop))
         return o
 
 
