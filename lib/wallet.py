@@ -581,7 +581,7 @@ class Abstract_Wallet(object):
         if name is None: return
         # names last 35,999 blocks
         name_expiration_period = 35999
-        registered_height = namelist[3]
+        registered_height = namelist[4]
         expiration_block = registered_height + name_expiration_period
         return expiration_block - (self.network.get_local_height() - registered_height)
 
@@ -606,6 +606,7 @@ class Abstract_Wallet(object):
                 if not self.pending_names.get(name_identifier, None):
                     continue
                 self.pending_names[name_identifier].update({
+                    'address': addr,
                     'txid': tx_hash,
                     'vout': i,
                     'height': tx_height
@@ -801,7 +802,70 @@ class Abstract_Wallet(object):
         self.save_names()
         return tx
 
-    def make_unsigned_transaction(self, outputs, fixed_fee=None, change_addr=None, domain=None, coins=None ):
+    def make_name_firstupdate_tx(self, identifier, value):
+        # Get data from the name_new output
+        pending_name = self.pending_names.get(identifier, None)
+        if pending_name is None: return
+        utxo = {
+            'address': pending_name.get('address'),
+            'value': 1000000,
+            'prevout_n': pending_name.get('vout'),
+            'prevout_hash': pending_name.get('txid'),
+            'height': pending_name.get('height'),
+            'coinbase': False
+        }
+        self.add_input_info(utxo)
+
+        rand_bytes = pending_name.get('rand')
+
+        # get a new address
+        domain = self.addresses(True)
+        for addr in domain:
+            if not self.history.get(addr):
+                name_address = addr
+                break
+
+        name_output = {
+            'address': name_address,
+            'name': identifier,
+            'rand': rand_bytes,
+            'value': value
+        }
+        outputs = [ ('name_firstupdate', name_output, 1000000) ]
+        tx = self.make_unsigned_transaction(outputs, name_input=utxo)
+        return tx
+
+    def make_name_update_tx(self, identifier, value):
+        # Get data from the existing name
+        current_name = self.names.get(identifier, None)
+        if current_name is None: return
+        utxo = {
+            'address': current_name[3]
+            'value': 1000000,
+            'prevout_n': current_name[2],
+            'prevout_hash': current_name[1],
+            'height': current_name[4],
+            'coinbase': False
+        }
+        self.add_input_info(utxo)
+
+        # get a new address
+        domain = self.addresses(True)
+        for addr in domain:
+            if not self.history.get(addr):
+                name_address = addr
+                break
+
+        name_output = {
+            'address': name_address,
+            'name': identifier,
+            'value': value
+        }
+        outputs = [ ('name_update', name_output, 1000000) ]
+        tx = self.make_unsigned_transaction(outputs, name_input=utxo)
+        return tx
+
+    def make_unsigned_transaction(self, outputs, fixed_fee=None, change_addr=None, domain=None, coins=None, name_input=None ):
         # check outputs
         for type, data, value in outputs:
             if type == 'address':
@@ -817,7 +881,10 @@ class Abstract_Wallet(object):
 
         amount = sum( map(lambda x:x[2], outputs) )
         total = fee = 0
-        inputs = []
+        if name_input is None:
+            inputs = []
+        else:
+            inputs = [name_input]
         tx = Transaction(inputs, outputs)
         for item in coins:
             if item.get('coinbase') and item.get('height') + COINBASE_MATURITY > self.network.get_local_height():
